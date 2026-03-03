@@ -69,6 +69,11 @@ list of arguments.
     )
     parser.add_argument("--commands-file", type=str, help="read commands from file")
     parser.add_argument(
+        "--skip-commands-file",
+        type=str,
+        help="file containing commands to skip from the commands file",
+    )
+    parser.add_argument(
         "--backend",
         dest="backends",
         type=str,
@@ -185,6 +190,7 @@ def main(args: list[str] = sys.argv[1:]) -> int:
     # separates to ['foo', 'bar']
     extra_cli_args = [a for arg in extra_cli_args for a in arg.split("\t")]
     commands_file: str | None = meta_args.commands_file
+    skip_commands_file: str | None = meta_args.skip_commands_file
 
     if commands_file:
         splitter: Callable[[str], list[str]] = lambda s: (
@@ -195,6 +201,23 @@ def main(args: list[str] = sys.argv[1:]) -> int:
                 splitter(s) + extra_cli_args
                 for s in f.readlines()
                 if s.strip() and not s.startswith("#")
+            ]
+
+        # Filter out commands listed in skip_commands_file
+        if skip_commands_file:
+            skip_splitter: Callable[[str], list[str]] = lambda s: (
+                s.strip().split("\t") if skip_commands_file.endswith(".tsv") else shlex.split(s)
+            )
+            with open(skip_commands_file) as f:
+                skip_commands_set = {
+                    shlex.join(skip_splitter(s))
+                    for s in f.readlines()
+                    if s.strip() and not s.startswith("#")
+                }
+            # Filter out commands that match any skip command (ignoring extra_cli_args)
+            mio_args = [
+                cmd for cmd in mio_args
+                if shlex.join(cmd[:-len(extra_cli_args)] if extra_cli_args else cmd) not in skip_commands_set
             ]
     else:
         mio_args = [extra_cli_args]  # use CLI arguments
