@@ -86,7 +86,9 @@ def _call_with_timeout(fn, args, kwargs=None, timeout=None):
     kwargs = kwargs or {}
     parent_conn, child_conn = multiprocessing.Pipe()
     start = time.time()
-    proc = multiprocessing.Process(
+    # Use spawn instead of fork to avoid CUDA re-initialization issues
+    ctx = multiprocessing.get_context('spawn')
+    proc = ctx.Process(
         target=_call_with_timeout_subprocess, args=(fn, args, kwargs, child_conn)
     )
     proc.start()
@@ -99,15 +101,13 @@ def _call_with_timeout(fn, args, kwargs=None, timeout=None):
                 raise result[1]
             return result
         if time.time() - start > timeout:
-            # Timeout exceeded, terminate the process
+            # Timeout exceeded - aggressively kill the process
+            # GPU operations can hang, so don't wait - use SIGKILL immediately
             try:
-                os.kill(proc.pid, signal.SIGTERM)
+                os.kill(proc.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
-            time.sleep(0.5)
-            if proc.is_alive():
-                proc.terminate()
-            proc.join(timeout=5)
+            proc.join(timeout=2)
             if proc.is_alive():
                 proc.kill()
                 proc.join()
@@ -254,9 +254,8 @@ list of arguments.
 def _execute_single_command(
     driver_args: list[str],
     meta_args: argparse.Namespace,
-    timing_parser: argparse.ArgumentParser,
     backends: list[str],
-    devices: list[torch.device],
+    gpu_id: int,
     csv_stats: list[str],
     numerics_csv_cols: list[str],
 ) -> tuple[list[str], bool]:
@@ -268,6 +267,10 @@ def _execute_single_command(
     """
     csv_row: list[str] = []
     had_error = False
+
+    # Create timing parser and devices in subprocess to avoid pickling issues
+    timing_parser = get_timing_parser()
+    devices = _get_devices(gpu_id)
 
     timing_args, runner_args = timing_parser.parse_known_args(driver_args)
     csv_row.append(shlex.join(driver_args))
@@ -496,9 +499,6 @@ def main(args: list[str] = sys.argv[1:]) -> int:
 
     csv_file.writerow(csv_headers)
 
-    timing_parser = get_timing_parser()
-
-    devices = _get_devices(meta_args.gpu_id)
     test_count = 0
     test_error = 0
 
@@ -515,9 +515,8 @@ def main(args: list[str] = sys.argv[1:]) -> int:
                 args=(
                     driver_args,
                     meta_args,
-                    timing_parser,
                     backends,
-                    devices,
+                    meta_args.gpu_id,
                     csv_stats,
                     numerics_csv_cols,
                 ),
@@ -528,6 +527,13 @@ def main(args: list[str] = sys.argv[1:]) -> int:
         except TimeoutError as exc:
             if meta_args.verbose:
                 print(f">>> TIMEOUT: {exc}")
+            # Clean up GPU state after killing hung process
+            try:
+                torch.cuda.synchronize()
+                gc.collect()
+                torch.cuda.empty_cache()
+            except Exception:
+                pass  # Ignore cleanup errors
             csv_row = [shlex.join(driver_args)]
             csv_row += [f"timeout ({meta_args.timeout}s)"] * len(csv_stats)
             csv_row += ["N.A."] * len(numerics_csv_cols)
