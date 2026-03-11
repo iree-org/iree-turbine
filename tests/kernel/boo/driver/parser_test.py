@@ -26,7 +26,7 @@ def test_aten_parser():
 
     assert list(arg_2.shape) == [512, 512]
     assert list(arg_2.stride()) == [1, 512]
-    assert arg_2.dtype == torch.float64
+    assert arg_2.dtype == torch.float32
 
     assert isinstance(sig, AtenSignature)
     [(beta_desc, beta_val), (alpha_desc, alpha_val)] = sig.get_concrete_args()
@@ -38,7 +38,32 @@ def test_aten_parser():
 
 @pytest.mark.parametrize(
     "aten_dtype, expected_dtype",
-    [("c10::Half", torch.float16), ("c10::Float", torch.float32)],
+    [
+        ("float", torch.float32),
+        ("double", torch.float64),
+        ("c10::Half", torch.float16),
+        ("c10::BFloat16", torch.bfloat16),
+    ],
+)
+def test_aten_dtype_mapping(aten_dtype: str, expected_dtype: torch.dtype):
+    """Test that profiler dtype strings map to the correct torch dtypes."""
+    sig = AtenParser.command_to_signature(
+        [
+            "aten::bmm",
+            "[[2, 3, 4], [2, 4, 5]]",
+            f"['{aten_dtype}', '{aten_dtype}']",
+            "[[12, 4, 1], [20, 5, 1]]",
+            "['', '']",
+        ]
+    )
+    [arg_0, arg_1] = sig.get_sample_args()
+    assert arg_0.dtype == expected_dtype
+    assert arg_1.dtype == expected_dtype
+
+
+@pytest.mark.parametrize(
+    "aten_dtype, expected_dtype",
+    [("c10::Half", torch.float16), ("float", torch.float32)],
 )
 def test_aten_parser_sdpa(aten_dtype: str, expected_dtype: torch.dtype):
     sig = AtenParser.command_to_signature(
@@ -75,11 +100,11 @@ def test_aten_parser_non_contiguous_strides():
 
     assert list(arg_0.shape) == [672, 3, 3]
     assert list(arg_0.stride()) == [16, 1, 4]
-    assert arg_0.dtype == torch.float64
+    assert arg_0.dtype == torch.float32
 
     assert list(arg_1.shape) == [672, 3, 25000]
     assert list(arg_1.stride()) == [75000, 25000, 1]
-    assert arg_1.dtype == torch.float64
+    assert arg_1.dtype == torch.float32
 
 
 def test_layer_norm_parser_mode_0():
