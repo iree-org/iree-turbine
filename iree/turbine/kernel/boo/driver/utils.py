@@ -17,7 +17,13 @@ def get_timing_parser() -> argparse.ArgumentParser:
         "--time", "-t", type=int, help="Enable timing", default=1
     )
     timing_parser.add_argument(
-        "--iter", type=int, help="Number of iterations to run", default=100
+        "--iter", type=int, help="Number of iterations to run (floor when auto-adjusting)", default=100
+    )
+    timing_parser.add_argument(
+        "--min-time",
+        type=float,
+        help="Minimum benchmark duration in seconds (default: 3.0)",
+        default=3.0,
     )
     return timing_parser
 
