@@ -156,6 +156,8 @@ class MMGroupQuantRewriterPass(Pass):
                 param_name=mr.param_name[8:],
                 lowp_type="i4",
                 m=none_to_q(mr.m),
+                # output_shape operands must be integer literals for static
+                # dims and SSA values for dynamic dims
                 m_size="%m" if mr.m is None else mr.m,
                 n=none_to_q(mr.n),
                 k=none_to_q(mr.k),
