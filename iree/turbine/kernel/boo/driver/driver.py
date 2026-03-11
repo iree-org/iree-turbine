@@ -53,21 +53,23 @@ class ZoneStats(NamedTuple):
 ZoneStatsSummary = dict[str, ZoneStats]
 
 
-def compute_auto_iters(warmup_time: float, min_time: float, iter_floor: int) -> int:
+def compute_auto_iters(warmup_time: float, min_time: float, iter_fallback: int) -> int:
     """Compute the number of iterations needed to run for at least `min_time` seconds.
+
+    When min_time is active (> 0), its computed iteration count takes priority
+    over --iter. The iter_fallback is only used when min_time is disabled.
 
     Args:
         warmup_time: Time in seconds for a single warmup iteration.
         min_time: Minimum benchmark duration in seconds.
-        iter_floor: Minimum number of iterations (from --iter).
+        iter_fallback: Fallback number of iterations when min_time is disabled (from --iter).
 
     Returns:
         The iteration count to use.
     """
     if warmup_time > 0 and min_time > 0:
-        needed_iters = math.ceil(min_time / warmup_time)
-        return max(needed_iters, iter_floor)
-    return iter_floor
+        return math.ceil(min_time / warmup_time)
+    return iter_fallback
 
 
 def _get_main_driver_parser() -> argparse.ArgumentParser:
