@@ -560,7 +560,9 @@ def run(
 
     # Auto-adjust iteration count: ensure benchmark runs for at least min_time seconds.
     if timing_args.time:
-        actual_iters = compute_auto_iters(warmup_time, timing_args.min_time, timing_args.iter)
+        actual_iters = compute_auto_iters(
+            warmup_time, timing_args.min_time, timing_args.iter
+        )
     else:
         actual_iters = timing_args.iter
 
