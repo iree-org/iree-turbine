@@ -38,7 +38,7 @@ def test_roundtrip_csv_single_command():
         csv_file = Path(td) / "conv_stats.csv"
         iters = 4
         meta_args = [f"--csv={csv_file}"]
-        command_args = ["convbfp16", "-F=1", f"--iter={iters}"]
+        command_args = ["convbfp16", "-F=1", f"--iter={iters}", "--min-time=0"]
         args = meta_args + command_args
         # Check we don't encounter an error.
         assert driver.main(args) == 0
@@ -58,7 +58,7 @@ def test_roundtrip_csv_commands_file():
     with tempfile.TemporaryDirectory() as td:
         commands_file = Path(td) / "commands.txt"
         commands = [
-            ["convbfp16", "-F", "1", "--iter", "4"],
+            ["convbfp16", "-F", "1", "--iter", "4", "--min-time", "0"],
             [
                 "convbfp16",
                 "-F",
@@ -71,6 +71,8 @@ def test_roundtrip_csv_commands_file():
                 "NHWC",
                 "--iter",
                 "2",
+                "--min-time",
+                "0",
             ],
         ]
         commands_file.write_text("\n".join([shlex.join(c) for c in commands]))
@@ -81,8 +83,9 @@ def test_roundtrip_csv_commands_file():
         # Check we don't encounter an error.
         assert driver.main(args) == 0
         data = _read_csv_as_dicts(csv_file, backends=[backend])
-        for d, c in zip(data, commands, strict=True):
+        expected_iters = [4, 2]
+        for d, c, iters in zip(data, commands, expected_iters, strict=True):
             # Check the arguments column contains the individual command.
             assert d["arguments"] == shlex.join(c)
             # Check all convs have a single dispatch per launch.
-            assert d[f"{backend} num_dispatches"] == c[-1]
+            assert d[f"{backend} num_dispatches"] == str(iters)
