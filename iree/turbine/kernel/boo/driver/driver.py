@@ -535,7 +535,12 @@ def run(
     for device in devices:
         get_device_from_torch(device).hal_device.allocator.trim()
 
-    # Warmup run: also used for memory estimation and auto-adjust timing.
+    # First call: triggers JIT compilation for compiled backends.
+    torch.cuda.synchronize(devices[0])
+    example_results = func(*per_device_args[0])
+    torch.cuda.synchronize(devices[0])
+
+    # Second call: measures actual kernel run time (excluding compilation).
     torch.cuda.synchronize(devices[0])
     warmup_start = time.time()
     example_results = func(*per_device_args[0])
