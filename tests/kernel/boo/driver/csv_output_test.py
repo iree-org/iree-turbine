@@ -38,7 +38,7 @@ def test_roundtrip_csv_single_command():
         csv_file = Path(td) / "conv_stats.csv"
         iters = 4
         meta_args = [f"--csv={csv_file}"]
-        command_args = ["convbfp16", "-F=1", f"--iter={iters}", "--min-time=0"]
+        command_args = ["convbfp16", "-F=1", f"--iter={iters}"]
         args = meta_args + command_args
         # Check we don't encounter an error.
         assert driver.main(args) == 0
@@ -58,7 +58,7 @@ def test_roundtrip_csv_commands_file():
     with tempfile.TemporaryDirectory() as td:
         commands_file = Path(td) / "commands.txt"
         commands = [
-            ["convbfp16", "-F", "1", "--iter", "4", "--min-time", "0"],
+            ["convbfp16", "-F", "1", "--iter", "4"],
             [
                 "convbfp16",
                 "-F",
@@ -71,8 +71,6 @@ def test_roundtrip_csv_commands_file():
                 "NHWC",
                 "--iter",
                 "2",
-                "--min-time",
-                "0",
             ],
         ]
         commands_file.write_text("\n".join([shlex.join(c) for c in commands]))
