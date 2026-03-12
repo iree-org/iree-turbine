@@ -33,7 +33,7 @@ from iree.turbine.kernel.boo.driver.numerics import (
     STDDEV_CHECK_ATOL_DEFAULT,
     STDDEV_CHECK_RTOL_DEFAULT,
 )
-from iree.turbine.kernel.boo.driver.utils import get_timing_parser
+from iree.turbine.kernel.boo.driver.utils import get_timing_parser, resolve_timing_args
 from iree.turbine.kernel.boo.runtime.cache import set_cache_dir, toggle_cache_on
 from iree.turbine.runtime.device import get_device_from_torch
 
@@ -53,23 +53,23 @@ class ZoneStats(NamedTuple):
 ZoneStatsSummary = dict[str, ZoneStats]
 
 
-def compute_auto_iters(warmup_time: float, min_time: float, iter_fallback: int) -> int:
+def compute_auto_iters(warmup_time: float, min_time: float, min_iter: int) -> int:
     """Compute the number of iterations needed to run for at least `min_time` seconds.
 
-    When min_time is active (> 0), its computed iteration count takes priority
-    over --iter. The iter_fallback is only used when min_time is disabled.
+    When min_time is active (> 0), its computed iteration count takes priority.
+    The min_iter value is only used when min_time is disabled (i.e. via --iter).
 
     Args:
         warmup_time: Time in seconds for a single warmup iteration.
         min_time: Minimum benchmark duration in seconds.
-        iter_fallback: Fallback number of iterations when min_time is disabled (from --iter).
+        min_iter: Number of iterations when min_time is disabled (from --min-iter).
 
     Returns:
         The iteration count to use.
     """
     if warmup_time > 0 and min_time > 0:
         return math.ceil(min_time / warmup_time)
-    return iter_fallback
+    return min_iter
 
 
 def _get_main_driver_parser() -> argparse.ArgumentParser:
@@ -278,6 +278,7 @@ def main(args: list[str] = sys.argv[1:]) -> int:
         else:
             print("Running test :", test_count)
         timing_args, runner_args = timing_parser.parse_known_args(driver_args)
+        resolve_timing_args(timing_args)
         csv_row.append(shlex.join(driver_args))
         signature = BooOpRegistry.parse_command(runner_args)
 
@@ -561,15 +562,16 @@ def run(
     # Auto-adjust iteration count: ensure benchmark runs for at least min_time seconds.
     if timing_args.time:
         actual_iters = compute_auto_iters(
-            warmup_time, timing_args.min_time, timing_args.iter
+            warmup_time, timing_args.min_time, timing_args.min_iter
         )
     else:
-        actual_iters = timing_args.iter
+        actual_iters = timing_args.min_iter
 
-    if verbose and actual_iters != timing_args.iter:
+    if verbose and actual_iters != timing_args.min_iter:
         print(
             f">>>\tAuto-adjusted iterations: {actual_iters} "
-            f"(warmup: {warmup_time:.4f}s, target: {timing_args.min_time:.1f}s, floor: {timing_args.iter})"
+            f"(warmup: {warmup_time:.4f}s, target: {timing_args.min_time:.1f}s, "
+            f"min-iter: {timing_args.min_iter})"
         )
 
     output_num_bytes = sum(x.element_size() * x.numel() for x in example_results)

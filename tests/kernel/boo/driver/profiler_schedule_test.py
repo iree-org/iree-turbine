@@ -153,36 +153,36 @@ def test_profiler_integration():
 class TestComputeAutoIters:
     def test_short_kernel_gets_more_iters(self):
         """A 1ms kernel should need 3000 iters for 3s target."""
-        result = compute_auto_iters(warmup_time=0.001, min_time=3.0, iter_fallback=100)
+        result = compute_auto_iters(warmup_time=0.001, min_time=3.0, min_iter=100)
         assert result == 3000
 
     def test_long_kernel_uses_min_time(self):
         """A 10s kernel with 3s target → 1 iter. min_time overrides --iter."""
-        result = compute_auto_iters(warmup_time=10.0, min_time=3.0, iter_fallback=100)
+        result = compute_auto_iters(warmup_time=10.0, min_time=3.0, min_iter=100)
         assert result == 1
 
     def test_exact_match(self):
         """A 0.03s kernel needs exactly 100 iters for 3s target."""
-        result = compute_auto_iters(warmup_time=0.03, min_time=3.0, iter_fallback=100)
+        result = compute_auto_iters(warmup_time=0.03, min_time=3.0, min_iter=100)
         assert result == 100
 
     def test_rounds_up(self):
         """Should round up to ensure minimum time is met."""
-        result = compute_auto_iters(warmup_time=0.007, min_time=3.0, iter_fallback=100)
+        result = compute_auto_iters(warmup_time=0.007, min_time=3.0, min_iter=100)
         # 3.0 / 0.007 = 428.57... -> ceil = 429
         assert result == 429
 
-    def test_min_time_overrides_high_iter(self):
-        """min_time takes priority over --iter. 3s / 0.1s = 30 iters, not 500."""
-        result = compute_auto_iters(warmup_time=0.1, min_time=3.0, iter_fallback=500)
+    def test_min_time_overrides_high_min_iter(self):
+        """min_time takes priority over --min-iter. 3s / 0.1s = 30 iters, not 500."""
+        result = compute_auto_iters(warmup_time=0.1, min_time=3.0, min_iter=500)
         assert result == 30
 
     def test_zero_min_time_uses_fallback(self):
         """When min_time is 0, use the fallback (disables auto-adjust)."""
-        result = compute_auto_iters(warmup_time=0.001, min_time=0.0, iter_fallback=100)
+        result = compute_auto_iters(warmup_time=0.001, min_time=0.0, min_iter=100)
         assert result == 100
 
     def test_zero_warmup_time_uses_fallback(self):
         """When warmup_time is 0 (shouldn't happen), use the fallback."""
-        result = compute_auto_iters(warmup_time=0.0, min_time=3.0, iter_fallback=100)
+        result = compute_auto_iters(warmup_time=0.0, min_time=3.0, min_iter=100)
         assert result == 100
