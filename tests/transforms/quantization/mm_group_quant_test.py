@@ -5,42 +5,57 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-from pathlib import Path
-import logging
-import unittest
-
+import pytest
 from iree.compiler.ir import (
     Context,
     Operation,
 )
 
-from iree.turbine.transforms import rewriter
 from iree.turbine.transforms.quantization import mm_group_quant
 
-MM_F32_TO_INT4_CONTENTS = (
-    Path(__file__).resolve().parent / "mm_f32_to_int4.mlir"
-).read_text()
+MM_F32_TO_INT4_DYNAMIC_M = r"""
+module @state_update {
+  util.global private @_params.model.layers.0.self_attn.q_proj.weight {noinline} : tensor<4096x4096xf32>
+  func.func @initialize(%arg0: !torch.vtensor<[?,4096],f32>) -> (!torch.vtensor<[?,4096],f32>) {
+    %_params.model.layers.0.self_attn.q_proj.weight = util.global.load @_params.model.layers.0.self_attn.q_proj.weight : tensor<4096x4096xf32>
+    %55 = torch_c.from_builtin_tensor %_params.model.layers.0.self_attn.q_proj.weight : tensor<4096x4096xf32> -> !torch.vtensor<[4096,4096],f32>
+    %int0_74 = torch.constant.int 0
+    %int1_75 = torch.constant.int 1
+    %56 = torch.aten.transpose.int %55, %int0_74, %int1_75 : !torch.vtensor<[4096,4096],f32>, !torch.int, !torch.int -> !torch.vtensor<[4096,4096],f32>
+    %59 = torch.aten.mm %arg0, %56 : !torch.vtensor<[?,4096],f32>, !torch.vtensor<[4096,4096],f32> -> !torch.vtensor<[?,4096],f32>
+    return %59 : !torch.vtensor<[?,4096],f32>
+  }
+}
+"""
+
+MM_F32_TO_INT4_STATIC_M = r"""
+module @state_update {
+  util.global private @_params.model.layers.0.self_attn.q_proj.weight {noinline} : tensor<4096x4096xf32>
+  func.func @initialize(%arg0: !torch.vtensor<[32,4096],f32>) -> (!torch.vtensor<[32,4096],f32>) {
+    %_params.model.layers.0.self_attn.q_proj.weight = util.global.load @_params.model.layers.0.self_attn.q_proj.weight : tensor<4096x4096xf32>
+    %55 = torch_c.from_builtin_tensor %_params.model.layers.0.self_attn.q_proj.weight : tensor<4096x4096xf32> -> !torch.vtensor<[4096,4096],f32>
+    %int0_74 = torch.constant.int 0
+    %int1_75 = torch.constant.int 1
+    %56 = torch.aten.transpose.int %55, %int0_74, %int1_75 : !torch.vtensor<[4096,4096],f32>, !torch.int, !torch.int -> !torch.vtensor<[4096,4096],f32>
+    %59 = torch.aten.mm %arg0, %56 : !torch.vtensor<[32,4096],f32>, !torch.vtensor<[4096,4096],f32> -> !torch.vtensor<[32,4096],f32>
+    return %59 : !torch.vtensor<[32,4096],f32>
+  }
+}
+"""
 
 
-class Int4Quant(unittest.TestCase):
-    def setUp(self):
-        self.MM_F32_TO_INT4_CONTENTS = (
-            Path(__file__).resolve().parent / "mm_f32_to_int4.mlir"
-        ).read_text()
-
-    def testBasic(self):
-        with Context() as context:
-            module_op = Operation.parse(self.MM_F32_TO_INT4_CONTENTS)
-            mm_group_quant.MMGroupQuantRewriterPass(module_op).run()
-            module_asm = str(module_op)
-            print(module_asm)
-            self.assertNotIn("torch.aten.mm", module_asm)
-            self.assertNotIn(
-                "@_params.model.layers.0.self_attn.q_proj.weight ", module_asm
-            )
-            self.assertIn("linalg.generic", module_asm)
-
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.DEBUG)
-    unittest.main()
+@pytest.mark.parametrize(
+    "contents",
+    [
+        pytest.param(MM_F32_TO_INT4_DYNAMIC_M, id="dynamic_m"),
+        pytest.param(MM_F32_TO_INT4_STATIC_M, id="static_m"),
+    ],
+)
+def test_group_quant(contents):
+    with Context():
+        module_op = Operation.parse(contents)
+        mm_group_quant.MMGroupQuantRewriterPass(module_op).run()
+        module_asm = str(module_op)
+        assert "torch.aten.mm" not in module_asm
+        assert "@_params.model.layers.0.self_attn.q_proj.weight " not in module_asm
+        assert "linalg.generic" in module_asm
