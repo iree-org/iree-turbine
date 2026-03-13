@@ -18,3 +18,22 @@ SAMPLE_COMMANDS_PATH = Path(driver.__file__).parent / "sample_commands.txt"
 )
 def test_main(args: list[str], expected_exit_code: int):
     assert driver.main(args) == expected_exit_code
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="driver requires GPU to run")
+def test_cache_dir(tmp_path: Path):
+    """--cache-dir should populate the cache directory with compiled artifacts."""
+    cache_dir = tmp_path / "test-cache"
+    assert (
+        driver.main(
+            [
+                "--cache-dir",
+                str(cache_dir),
+                "--iter",
+                "1",
+                "conv",
+            ]
+        )
+        == 0
+    )
+    assert any(cache_dir.iterdir()), f"cache dir {cache_dir} is empty"
