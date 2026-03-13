@@ -64,6 +64,10 @@ TORCH_DEVICE_NAME_TO_SKU = {
     "AMD Instinct MI250": "mi250",
     "AMD Instinct MI210": "mi210",
     "AMD Instinct MI100": "mi100",
+    "AMD Radeon RX 9070 XT": "rx9070xt",
+    "AMD Radeon RX 9070": "rx9070",
+    "AMD Radeon RX 9060 XT": "rx9060xt",
+    "AMD Radeon AI PRO R9700": "r9700",
 }
 
 
