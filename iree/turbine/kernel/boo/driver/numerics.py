@@ -192,10 +192,33 @@ def collect_error_samples(
             num_batches = max(1, (min_samples + output_numel - 1) // output_numel)
 
         # Run PyTorch GPU
-        with torch.no_grad():
-            pytorch_gpu_result = reference_module(*gpu_args)
-        if isinstance(pytorch_gpu_result, torch.Tensor):
-            pytorch_gpu_result = (pytorch_gpu_result,)
+        # WORKAROUND: PyTorch/ROCm has a bug with convolution_backward on GPU
+        # for half-precision types (bfloat16/float16). Cast to float32 to avoid
+        # floating-point exceptions.
+        needs_fp32_cast = any(
+            arg.is_floating_point() and arg.dtype in (torch.bfloat16, torch.float16)
+            for arg in gpu_args
+        )
+        if needs_fp32_cast:
+            gpu_args_fp32 = tuple(
+                arg.to(dtype=torch.float32) if arg.is_floating_point() else arg
+                for arg in gpu_args
+            )
+            with torch.no_grad():
+                pytorch_gpu_result = reference_module(*gpu_args_fp32)
+            if isinstance(pytorch_gpu_result, torch.Tensor):
+                pytorch_gpu_result = (pytorch_gpu_result.to(dtype=gpu_args[0].dtype),)
+            else:
+                # Cast all float outputs back to original dtype
+                pytorch_gpu_result = tuple(
+                    res.to(dtype=gpu_args[0].dtype) if res.is_floating_point() else res
+                    for res in pytorch_gpu_result
+                )
+        else:
+            with torch.no_grad():
+                pytorch_gpu_result = reference_module(*gpu_args)
+            if isinstance(pytorch_gpu_result, torch.Tensor):
+                pytorch_gpu_result = (pytorch_gpu_result,)
 
         # Run BOO GPU
         try:
@@ -384,17 +407,47 @@ def run_structured_test(
         return False, f"BOO compilation failed: {e}"
 
     # Run both
-    with torch.no_grad():
-        pytorch_result = reference_module(*gpu_args)
-        try:
-            boo_result = boo_module(*gpu_args)
-        except Exception as e:
-            return False, f"BOO runtime failed: {e}"
+    # WORKAROUND: PyTorch/ROCm has a bug with convolution_backward on GPU
+    # for half-precision types (bfloat16/float16). Cast to float32 to avoid
+    # floating-point exceptions.
+    needs_fp32_cast = any(
+        arg.is_floating_point() and arg.dtype in (torch.bfloat16, torch.float16)
+        for arg in gpu_args
+    )
+    if needs_fp32_cast:
+        gpu_args_fp32 = tuple(
+            arg.to(dtype=torch.float32) if arg.is_floating_point() else arg
+            for arg in gpu_args
+        )
+        with torch.no_grad():
+            pytorch_result = reference_module(*gpu_args_fp32)
+            try:
+                boo_result = boo_module(*gpu_args)
+            except Exception as e:
+                return False, f"BOO runtime failed: {e}"
 
-    if isinstance(pytorch_result, torch.Tensor):
-        pytorch_result = (pytorch_result,)
-    if isinstance(boo_result, torch.Tensor):
-        boo_result = (boo_result,)
+        if isinstance(pytorch_result, torch.Tensor):
+            pytorch_result = (pytorch_result.to(dtype=gpu_args[0].dtype),)
+        else:
+            # Cast all float outputs back to original dtype
+            pytorch_result = tuple(
+                res.to(dtype=gpu_args[0].dtype) if res.is_floating_point() else res
+                for res in pytorch_result
+            )
+        if isinstance(boo_result, torch.Tensor):
+            boo_result = (boo_result,)
+    else:
+        with torch.no_grad():
+            pytorch_result = reference_module(*gpu_args)
+            try:
+                boo_result = boo_module(*gpu_args)
+            except Exception as e:
+                return False, f"BOO runtime failed: {e}"
+
+        if isinstance(pytorch_result, torch.Tensor):
+            pytorch_result = (pytorch_result,)
+        if isinstance(boo_result, torch.Tensor):
+            boo_result = (boo_result,)
 
     # Compare main results on GPU
     main_idx = sig.main_result_index
