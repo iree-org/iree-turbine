@@ -17,9 +17,32 @@ def get_timing_parser() -> argparse.ArgumentParser:
         "--time", "-t", type=int, help="Enable timing", default=1
     )
     timing_parser.add_argument(
-        "--iter", type=int, help="Number of iterations to run", default=100
+        "--iter",
+        type=int,
+        help="Exact number of iterations (disables auto-adjustment; "
+        "shorthand for --min-iter X --min-time 0)",
+        default=None,
+    )
+    timing_parser.add_argument(
+        "--min-iter",
+        type=int,
+        help="Minimum number of iterations when auto-adjusting (default: 100)",
+        default=100,
+    )
+    timing_parser.add_argument(
+        "--min-time",
+        type=float,
+        help="Minimum benchmark duration in seconds (default: 3.0)",
+        default=3.0,
     )
     return timing_parser
+
+
+def resolve_timing_args(timing_args: argparse.Namespace) -> None:
+    """Resolve --iter shorthand into --min-iter and --min-time 0."""
+    if timing_args.iter is not None:
+        timing_args.min_iter = timing_args.iter
+        timing_args.min_time = 0.0
 
 
 def load_commands(commands_file: str) -> list[str]:
