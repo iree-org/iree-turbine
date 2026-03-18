@@ -44,6 +44,10 @@ time is reported, including memory and other operations not necessarily included
 in the kernel itself. Note: you can output statistics to a csv file with
 `--csv=results.csv`.
 
+The `--cache-dir <path>` option enables caching and stores compiled kernel
+artifacts in the given directory. This is equivalent to setting the
+`BOO_CACHE_ON=1` and `BOO_CACHE_DIR=<path>` environment variables.
+
 The BOO driver can execute using alternative backends by providing one or more
 `--backend` flags. Currently supported backends include:
 

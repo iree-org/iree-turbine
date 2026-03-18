@@ -32,6 +32,7 @@ from iree.turbine.kernel.boo.driver.numerics import (
     STDDEV_CHECK_RTOL_DEFAULT,
 )
 from iree.turbine.kernel.boo.driver.utils import get_timing_parser
+from iree.turbine.kernel.boo.runtime.cache import set_cache_dir, toggle_cache_on
 from iree.turbine.runtime.device import get_device_from_torch
 
 ZoneData = dict[str, list[float]]
@@ -164,6 +165,12 @@ list of arguments.
         action="store_true",
         help="Skip structured pattern tests during numerics verification.",
     )
+    parser.add_argument(
+        "--cache-dir",
+        type=str,
+        default=None,
+        help="Directory to use for the BOO file cache. Enables caching.",
+    )
     return parser
 
 
@@ -179,6 +186,10 @@ def main(args: list[str] = sys.argv[1:]) -> int:
     # Default to verbose terminal output if we're not writing to a file.
     if meta_args.verbose is None:
         meta_args.verbose = meta_args.csv is None
+
+    if meta_args.cache_dir is not None:
+        set_cache_dir(meta_args.cache_dir)
+        toggle_cache_on(1)
 
     # Allow tabs as an argument separator for easier copy-pasting from tsv files, i.e.
     #   $ iree-boo-driver "foo\tbar"
