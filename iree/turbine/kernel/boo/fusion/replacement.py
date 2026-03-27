@@ -330,14 +330,13 @@ def replace_aten_scaled_dot_product_flash_attention(node: Node):
         _scaled_dot_product_flash_attention(query, key, value, dropout_p, is_causal, *, scale=None)
     """
     # Extract arguments from flash attention call.
-    # Flash attention signature: (query, key, value, dropout_p, is_causal, *, scale=None)
-    query, key, value, dropout_p, is_causal = (
-        node.args[0],
-        node.args[1],
-        node.args[2],
-        node.args[3],
-        node.args[4],
-    )
+    # Flash attention signature: (query, key, value, dropout_p=0., is_causal=False, return_debug_mask=False, *, scale=None)
+    # Note: dropout_p and is_causal may use defaults and not be present in args
+    query = node.args[0]
+    key = node.args[1]
+    value = node.args[2]
+    dropout_p = node.args[3] if len(node.args) > 3 else 0.0
+    is_causal = node.args[4] if len(node.args) > 4 else False
     scale = node.kwargs.get("scale", None)
 
     # Attn mask is not present in the flash_attn op; pass None.
