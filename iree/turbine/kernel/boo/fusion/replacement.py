@@ -356,16 +356,17 @@ def replace_aten_scaled_dot_product_efficient_attention(node: Node):
         _scaled_dot_product_efficient_attention(query, key, value, attn_bias, compute_log_sumexp, dropout_p, is_causal, *, scale=None)
     """
     # Extract arguments from efficient attention call.
-    # Efficient attention signature: (query, key, value, attn_bias, compute_log_sumexp, dropout_p, is_causal, *, scale=None)
-    query, key, value, attn_bias, _compute_log_sumexp, dropout_p, is_causal = (
+    # Efficient attention signature: (query, key, value, attn_bias, compute_log_sumexp, dropout_p=0., is_causal=False, *, scale=None)
+    # Note: dropout_p and is_causal may use defaults and not be present in args.
+    query, key, value, attn_bias, _compute_log_sumexp = (
         node.args[0],
         node.args[1],
         node.args[2],
         node.args[3],
         node.args[4],
-        node.args[5],
-        node.args[6],
     )
+    dropout_p = node.args[5] if len(node.args) > 5 else 0.0
+    is_causal = node.args[6] if len(node.args) > 6 else False
     scale = node.kwargs.get("scale", None)
 
     _replace_sdpa_variant(
