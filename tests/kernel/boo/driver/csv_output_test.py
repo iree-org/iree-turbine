@@ -81,8 +81,9 @@ def test_roundtrip_csv_commands_file():
         # Check we don't encounter an error.
         assert driver.main(args) == 0
         data = _read_csv_as_dicts(csv_file, backends=[backend])
-        for d, c in zip(data, commands, strict=True):
+        expected_iters = [4, 2]
+        for d, c, iters in zip(data, commands, expected_iters, strict=True):
             # Check the arguments column contains the individual command.
             assert d["arguments"] == shlex.join(c)
             # Check all convs have a single dispatch per launch.
-            assert d[f"{backend} num_dispatches"] == c[-1]
+            assert d[f"{backend} num_dispatches"] == str(iters)
