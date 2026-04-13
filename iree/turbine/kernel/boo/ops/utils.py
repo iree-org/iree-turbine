@@ -4,6 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+import contextlib
 import os
 import math
 
@@ -15,6 +16,20 @@ from iree.compiler.extras.fx_importer import FxImporter
 from ....support.logging import runtime_logger as logger
 from ....support.ir_imports import Operation, PassManager, Context
 from ....transforms.general.custom_op_expansion import ExpandCustomOpsPass
+
+
+@contextlib.contextmanager
+def enable_predispatch_key():
+    """
+    Temporarily un-exclude the PreDispatch TLS dispatch key. This is required
+    when using 'torch.export.export' within 'torch.compile'.
+    """
+    with torch._C._PreserveDispatchKeyGuard():
+        torch._C._dispatch_tls_set_dispatch_key_excluded(
+            torch._C.DispatchKey.PreDispatch, False
+        )
+        yield
+
 
 __all__ = [
     "is_boo_backward_enabled",
@@ -221,7 +236,8 @@ def generate_custom_op_compatible_ir(
     The provided torch.nn.Module is imported as an mlir function which can be inlined during ExpandCustomOpsPass.
     """
     importer = FxImporter(context=context)
-    e = torch.export.export(module, args=args)
+    with enable_predispatch_key():
+        e = torch.export.export(module, args=args)
     importer.import_program(e, func_name=func_name, func_visibility="private")
     module_op = importer.module_op
     expansion_pass = ExpandCustomOpsPass(module_op)
