@@ -239,7 +239,7 @@ def default_compiler_flags_callback(device: Device, cache_dir: Path) -> list[str
         )
         flags.append("--iree-dispatch-creation-enable-split-reduction")
         flags.append(
-            "--iree-preprocessing-pass-pipeline=builtin.module(iree-preprocessing-convert-conv-filter-to-channels-last)"
+            "--iree-preprocessing-pass-pipeline=builtin.module(iree-preprocessing-backward-data-conv-pipeline)"
         )
         if BOO_TUNING_SPEC_PATH is not None:
             assert Path(
