@@ -23,6 +23,8 @@ def enable_predispatch_key():
     """
     Temporarily un-exclude the PreDispatch TLS dispatch key. This is required
     when using 'torch.export.export' within 'torch.compile'.
+
+    This is a workaround for an issue encountered with pytorch 2.11: https://github.com/iree-org/iree-turbine/issues/1338
     """
     with torch._C._PreserveDispatchKeyGuard():
         torch._C._dispatch_tls_set_dispatch_key_excluded(
