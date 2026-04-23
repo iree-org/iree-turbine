@@ -22,6 +22,7 @@ from ....support.ir_imports import PassManager, Context
 from ....transforms.general.custom_op_expansion import ExpandCustomOpsPass
 
 from .cache import OpCacheFiles, is_cache_enabled, LaunchableRuntimeCache
+from ..ops.utils import enable_predispatch_key
 from ....aot import export
 from ....importers.ir import Attribute, MLIRError
 from ....runtime import Launchable, Device
@@ -93,11 +94,12 @@ def get_module_asm(
         logger.debug("Loading cached mlir file at %s", str(mlir_path))
         return mlir_path.read_text()
 
-    e = export(
-        module_factory(),
-        args=tuple(arg_factory()),
-        function_name=func_name,
-    )
+    with enable_predispatch_key():
+        e = export(
+            module_factory(),
+            args=tuple(arg_factory()),
+            function_name=func_name,
+        )
 
     e.import_to("full")
 
