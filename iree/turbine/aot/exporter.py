@@ -22,6 +22,7 @@ from ..support.ir_imports import (
     Context,
     Operation,
 )
+from ..support.logging import aot_logger as logger
 
 from .builtins import *
 from .compiled_module import (
@@ -261,6 +262,8 @@ def export(
       An ExportOutput object that wraps the compilation and provides
       easy access.
     """
+    function_name = function_name or "main"
+
     if len(example_args) > 0:
         warnings.warn(
             DeprecationWarning(
@@ -282,7 +285,7 @@ def export(
     if isinstance(mdl, torch.export.ExportedProgram):
         TransformedModule = CompiledModule.create_from_dict(
             "LambdaCompiledModule",
-            {(function_name or "main"): ExportTargetDef(mdl, arg_device=arg_device)},
+            {function_name: ExportTargetDef(mdl, arg_device=arg_device)},
             export_name=module_name or "module",
             options=ModuleBuilderOptions(
                 import_symbolic_shape_expressions=import_symbolic_shape_expressions,
@@ -317,10 +320,14 @@ def export(
         if current_decomps:
             exported_program = exported_program.run_decompositions(current_decomps)
 
+        logger.debug(
+            "torch.fx exported program for %s:\n%s", function_name, exported_program
+        )
+
         TransformedModule = CompiledModule.create_from_dict(
             "LambdaCompiledModule",
             {
-                (function_name or "main"): ExportTargetDef(
+                function_name: ExportTargetDef(
                     exported_program,
                     arg_device=arg_device,
                 )
