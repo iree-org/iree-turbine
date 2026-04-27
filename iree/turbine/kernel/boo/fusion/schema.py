@@ -120,6 +120,14 @@ EXPERIMENTAL_SUPPORTED_BOO_FUSIONS: FusionSchema = DEFAULT_SUPPORTED_BOO_FUSIONS
     torch.ops.aten._scaled_dot_product_flash_attention.default: OpFusionSpec(),
     torch.ops.aten._scaled_dot_product_flash_attention_for_cpu.default: OpFusionSpec(),
     torch.ops.aten._scaled_dot_product_efficient_attention.default: OpFusionSpec(),
+    torch.ops.aten.argmax.default: OpFusionSpec(
+        recursive=False,
+        make_single_dispatch=True,
+    ),
+    torch.ops.aten.argmin.default: OpFusionSpec(
+        recursive=False,
+        make_single_dispatch=True,
+    ),
 }
 
 DEFAULT_POST_FUSION_REPLACEMENTS: ReplacementSchema = {

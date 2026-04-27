@@ -129,3 +129,28 @@ def test_layer_norm_parser_mode_1():
     assert sig.bias
     sample_args = sig.get_sample_args(seed=0)
     assert len(sample_args) == 3, "mode 1 should have input, weight, bias"
+
+
+@pytest.mark.parametrize("op_name", ["aten::argmax", "aten::argmin"])
+def test_arg_compare_parser(op_name: str):
+    sig = AtenParser.command_to_signature(
+        [
+            op_name,
+            "[[4, 8, 16], [], []]",
+            "['float', 'Scalar', 'Scalar']",
+            "[[128, 16, 1], [], []]",
+            "['', '1', 'False']",
+        ]
+    )
+    assert isinstance(sig, AtenSignature)
+    assert sig.name == op_name
+    (input_tensor,) = sig.get_sample_args()
+    assert list(input_tensor.shape) == [4, 8, 16]
+    assert input_tensor.dtype == torch.float32
+
+    concrete = list(sig.get_concrete_args())
+    assert len(concrete) == 2
+    assert concrete[0][0].name == "dim"
+    assert concrete[0][1] == 1
+    assert concrete[1][0].name == "keepdim"
+    assert concrete[1][1] == False
