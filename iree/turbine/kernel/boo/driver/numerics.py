@@ -249,8 +249,8 @@ def compute_error_statistics(errors: torch.Tensor) -> ErrorStatistics:
     Statistics: mean, stddev, max_abs_err, num_samples.
     """
     return ErrorStatistics(
-        mean=float(errors.mean().item()),
-        stddev=float(errors.std().item()),
+        mean=float(errors.mean(dtype=torch.float).item()),
+        stddev=float(errors.float().std().item()),
         max_abs_err=float(errors.abs().max().item()),
         num_samples=errors.numel(),
     )

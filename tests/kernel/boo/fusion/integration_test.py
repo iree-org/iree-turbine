@@ -7,6 +7,8 @@
 Testing functionality of the default BOO backend.
 """
 
+from collections.abc import Callable
+
 import pytest
 import torch
 from torch import fx
@@ -372,3 +374,42 @@ def test_boo_sdpa_replacement(device: str, experimental: bool, dtype: torch.dtyp
                 assert "aten._scaled_dot_product_flash_attention" in call_strings
         else:
             assert "aten._scaled_dot_product_flash_attention_for_cpu" in call_strings
+
+
+@pytest.mark.parametrize("device", ALL_DEVICES)
+@pytest.mark.parametrize("compare_fn", [torch.argmax, torch.argmin])
+def test_boo_argcompare_used(device: str, compare_fn: Callable):
+    """Test that argmax/argmin are offloaded through the BOO fusion pipeline."""
+    recorder = EagerAndRecordGraphs()
+
+    class ArgCompareModel(torch.nn.Module):
+        def __init__(self, dim: int):
+            super().__init__()
+            self.dim = dim
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return compare_fn(x, dim=self.dim)
+
+    model = ArgCompareModel(dim=1)
+    backend = boo.backend(
+        fusion_schema=EXPERIMENTAL_SUPPORTED_BOO_FUSIONS,
+        post_fusion_replacements=EXPERIMENTAL_POST_FUSION_REPLACEMENTS,
+        nested_backend=recorder,
+    )
+    compiled_model = torch.compile(model, backend=backend)
+
+    input_tensor = torch.randn(4, 8, 16, device=device)
+    compiled_model(input_tensor)
+
+    [compiled_module] = recorder.graphs
+    assert isinstance(compiled_module, fx.GraphModule)
+
+    boo_targets = [
+        node
+        for node in compiled_module.graph.nodes
+        if node.op == "call_function" and "boo." in str(node.target)
+    ]
+    assert len(boo_targets) >= 1, (
+        f"Expected BOO op in graph for {compare_fn.__name__}, "
+        f"got targets: {[str(n.target) for n in compiled_module.graph.nodes if n.op == 'call_function']}"
+    )
