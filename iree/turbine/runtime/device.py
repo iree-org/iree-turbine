@@ -68,6 +68,8 @@ TORCH_DEVICE_NAME_TO_SKU = {
     "AMD Radeon RX 9070": "rx9070",
     "AMD Radeon RX 9060 XT": "rx9060xt",
     "AMD Radeon AI PRO R9700": "r9700",
+    "AMD Radeon PRO W7900": "w7900",
+    "AMD Radeon PRO W7900 Dual Slot ": "w7900",
 }
 
 
