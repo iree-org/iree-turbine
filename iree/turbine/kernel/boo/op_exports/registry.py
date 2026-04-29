@@ -97,6 +97,8 @@ class BooOpRegistry:
 
 # Register ops.
 BooOpRegistry._register("aten::addmm", AtenSignature, AtenParser)
+BooOpRegistry._register("aten::argmax", AtenSignature, AtenParser)
+BooOpRegistry._register("aten::argmin", AtenSignature, AtenParser)
 BooOpRegistry._register("aten::bmm", AtenSignature, AtenParser)
 BooOpRegistry._register("aten::mm", AtenSignature, AtenParser)
 BooOpRegistry._register("aten::scaled_dot_product_attention", AtenSignature, AtenParser)
