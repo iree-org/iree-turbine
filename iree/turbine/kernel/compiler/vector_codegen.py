@@ -45,7 +45,12 @@ from .base import (
     CodegenError,
     NDEBUG,
     ValidationError,
+    options,
 )
+
+from .write_analysis import analyze_write, AnalysisResult
+from .write_codegen import emit_guarded_store
+
 
 from .ir import (
     AffineMap,
@@ -416,14 +421,22 @@ def _(emitter: ThreadEmitter, node: fx.Node):
         insert_rank = 1
 
     permutation_map = AffineMap.get_identity(dest_rank)
-    vector_d.transfer_write(
-        None,
-        insert_vector,
-        kb_dest,
-        start_indices,
-        AffineMapAttr.get(permutation_map),
-        in_bounds=[True for _ in range(insert_rank)],
-    )
+    
+    # Analyze write for single-writer property (identity mapping = unique)
+    analysis = analyze_write(None, ref_shape)
+
+    def emit_store():
+        vector_d.transfer_write(
+            None,
+            insert_vector,
+            kb_dest,
+            start_indices,
+            AffineMapAttr.get(permutation_map),
+            in_bounds=[True for _ in range(insert_rank)],
+        )
+
+    emit_guarded_store(emitter, analysis, emit_store)
+
 
 
 ###############################################################################
