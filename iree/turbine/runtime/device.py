@@ -76,7 +76,6 @@ TORCH_DEVICE_NAME_TO_SKU = {
     "AMD Radeon PRO W7900": "w7900",
     "AMD Radeon PRO W7800": "w7800",
     "AMD Radeon PRO W7700": "w7700",
-    "AMD Radeon Graphics": "phoenix",
     "AMD Radeon 890M": "strix-point",
     "AMD Radeon 8060S": "strix-halo",
 }
