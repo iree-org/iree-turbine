@@ -68,6 +68,16 @@ TORCH_DEVICE_NAME_TO_SKU = {
     "AMD Radeon RX 9070": "rx9070",
     "AMD Radeon RX 9060 XT": "rx9060xt",
     "AMD Radeon AI PRO R9700": "r9700",
+    "AMD Radeon RX 7900 XTX": "rx7900xtx",
+    "AMD Radeon RX 7900 XT": "rx7900xt",
+    "AMD Radeon RX 7800 XT": "rx7800xt",
+    "AMD Radeon RX 7700 XT": "rx7700xt",
+    "AMD Radeon PRO V710": "v710",
+    "AMD Radeon PRO W7900": "w7900",
+    "AMD Radeon PRO W7800": "w7800",
+    "AMD Radeon PRO W7700": "w7700",
+    "AMD Radeon 890M": "strix-point",
+    "AMD Radeon 8060S": "strix-halo",
 }
 
 
