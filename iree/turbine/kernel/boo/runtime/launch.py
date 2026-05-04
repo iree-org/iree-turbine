@@ -239,10 +239,26 @@ def default_compiler_flags_callback(device: Device, cache_dir: Path) -> list[str
         flags.append(
             "--iree-dispatch-creation-enable-fuse-padding-into-linalg-consumer-ops"
         )
-        flags.append("--iree-dispatch-creation-enable-split-reduction")
         flags.append(
             "--iree-preprocessing-pass-pipeline=builtin.module(iree-preprocessing-backward-data-conv-pipeline)"
         )
+        flags.append("--iree-dispatch-creation-enable-split-reduction")
+        # Auto-enable the low-parallelism split-reduction parameter set for
+        # RDNA-class targets (RX 9070 XT etc., or gfx10/11/12). CDNA-class
+        # targets use the default.
+        is_low_parallelism = False
+        rdna_sku_prefixes = ("rx", "r9", "w7", "w6", "w5")
+        rdna_gfx_prefixes = ("gfx10", "gfx11", "gfx12")
+        for f in getattr(device, "compile_target_flags", ()):
+            if f.startswith("--iree-rocm-target="):
+                arch = f.split("=", 1)[1].lower()
+                if arch.startswith(rdna_gfx_prefixes) or arch.startswith(
+                    rdna_sku_prefixes
+                ):
+                    is_low_parallelism = True
+                break
+        if is_low_parallelism:
+            flags.append("--iree-dispatch-creation-split-reduction-low-parallelism")
         if BOO_TUNING_SPEC_PATH is not None:
             assert Path(
                 BOO_TUNING_SPEC_PATH
