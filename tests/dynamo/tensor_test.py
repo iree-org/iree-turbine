@@ -4,6 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+import gc
 import logging
 import time
 import unittest
@@ -92,6 +93,19 @@ class TensorTest(unittest.TestCase):
         t1 = -5.3 * torch.ones(2, 3).to(device="turbine")
         t2 = torch.abs(t1)
         np.testing.assert_allclose(t2.cpu(), [[5.3, 5.3, 5.3], [5.3, 5.3, 5.3]])
+
+    def test_detach_alias_keeps_storage_alive(self):
+        source_cpu = torch.randn(2, 3)
+        source = source_cpu.to(device="turbine")
+        detached = source.detach()
+        self.assertIs(detached._storage, source._storage)
+
+        del source
+        gc.collect()
+
+        output = detached + 1
+        output = output + 1
+        np.testing.assert_allclose(output.cpu(), source_cpu.numpy() + 2, atol=1e-6)
 
     def test_nn_linear(self):
         m = torch.nn.Linear(20, 30)

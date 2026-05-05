@@ -177,10 +177,14 @@ class EagerSpecializedExecutable:
         wait_fence, signal_fence = self._initialize_fences(device, inputs, arg_list)
 
         # Move inputs to the device and add to arguments.
-        self._inputs_to_device(inputs, arg_list, wait_fence, signal_fence)
+        input_storages = self._inputs_to_device(
+            inputs, arg_list, wait_fence, signal_fence
+        )
 
         # Invoke.
         self.vm_context.invoke(self.entry_function, arg_list, ret_list)
+        for storage in input_storages:
+            storage.ready_fence = signal_fence
         return self._returns_to_user(ret_list, signal_fence)
 
     def _inputs_to_device(
@@ -193,13 +197,17 @@ class EagerSpecializedExecutable:
         # TODO: We are assuming the worst case here which is that we have unknown Torch
         # tensors that we send to the CPU and make continguous. Ideally, we would have
         # fast paths for our own backends and interop.
+        input_storages = []
         for input in inputs:
             arg_list.push_ref(input.buffer_view)
             wait_fence.extend(input._storage.ready_fence)
+            if input._storage not in input_storages:
+                input_storages.append(input._storage)
 
         # Append fences into list.
         arg_list.push_ref(wait_fence)
         arg_list.push_ref(signal_fence)
+        return input_storages
 
     def _returns_to_user(self, ret_list: VmVariantList, signal: HalFence = None):
         # TODO: This is also not good that we are moving back to the CPU like this.

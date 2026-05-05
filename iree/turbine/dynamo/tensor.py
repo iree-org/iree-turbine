@@ -309,6 +309,14 @@ class DeviceTensor(torch.Tensor):
         storage.ready_fence.insert(*alloca_complete_semaphore)
         return DeviceTensor(size, dtype, raw_data=storage)
 
+    def _alias(self, signal: Optional[HalFence] = None) -> "DeviceTensor":
+        """Creates a tensor alias sharing this tensor's storage owner."""
+        if signal is not None:
+            self._storage.ready_fence = signal
+        return DeviceTensor(
+            self.size(), self.dtype, raw_data=self._storage, requires_grad=False
+        )
+
     @staticmethod
     def _from_buffer(
         buffer: HalBuffer,
@@ -474,6 +482,33 @@ def _get_device_state() -> DeviceState:
     return DeviceState(driver="local-task")
 
 
+def _is_aten_op(src_op, op_name: str) -> bool:
+    return isinstance(src_op, torch._ops.OpOverload) and src_op.name() == op_name
+
+
+def _find_alias_storage(buffer: HalBuffer, input_tensors: Sequence[DeviceTensor]):
+    for input_tensor in input_tensors:
+        if (
+            isinstance(input_tensor, DeviceTensor)
+            and input_tensor._storage.buffer == buffer
+        ):
+            return input_tensor._storage
+    return None
+
+
+def _wrap_exec_result(
+    exec_res, input_tensors: Sequence[DeviceTensor], device: Device
+) -> DeviceTensor:
+    alias_storage = _find_alias_storage(exec_res.buffer, input_tensors)
+    if alias_storage is not None:
+        if exec_res.signal is not None:
+            alias_storage.ready_fence = exec_res.signal
+        return DeviceTensor(exec_res.size, exec_res.dtype, raw_data=alias_storage)
+    return DeviceTensor._from_buffer(
+        exec_res.buffer, exec_res.size, exec_res.dtype, device, exec_res.signal
+    )
+
+
 # Inspiration from https://github.com/nod-ai/SHARK-ModelDev/blob/8293de5414889c72ff5cd10bf33c43fb0a3ea3ee/python/iree/turbine/aot/builtins/jittable.py#L212-L237
 # and https://github.com/nod-ai/SHARK-ModelDev/blob/main/python/iree/turbine/dynamo/backends/cpu.py
 # TODO: Try to generalize for other devices.
@@ -483,6 +518,13 @@ def compute_method(super_fn, *args, **kwargs):
     # is often wrapped by DisableTorchFunction.
     init_py_args = args[:-1]
     src_op = args[-1]
+
+    if (
+        _is_aten_op(src_op, "aten::detach")
+        and len(init_py_args) == 1
+        and isinstance(init_py_args[0], DeviceTensor)
+    ):
+        return init_py_args[0]._alias()
 
     any_turbine_tensor = False
     devices_set = set()
@@ -520,10 +562,7 @@ def compute_method(super_fn, *args, **kwargs):
         exec_res = TurbineMode.CACHED_IMPLEMENTATIONS[compute_hash](*py_args, **kwargs)[
             0
         ]
-        res_buf = DeviceTensor._from_buffer(
-            exec_res.buffer, exec_res.size, exec_res.dtype, cur_device, exec_res.signal
-        )
-        return res_buf
+        return _wrap_exec_result(exec_res, py_args, cur_device)
 
     # Preprocess func and generate into FX.
     flat_pytorch_args = [py_arg._to_meta_tensor() for py_arg in py_args]
@@ -582,10 +621,7 @@ def compute_method(super_fn, *args, **kwargs):
 
     # Rewrap torch tensor into DeviceTensor and return.
     # TODO: Handle multiple output.
-    dev_res = DeviceTensor._from_buffer(
-        exec_res.buffer, exec_res.size, exec_res.dtype, cur_device, exec_res.signal
-    )
-    return dev_res
+    return _wrap_exec_result(exec_res, py_args, cur_device)
 
 
 ###############################################################################
