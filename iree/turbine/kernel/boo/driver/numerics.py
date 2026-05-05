@@ -103,8 +103,18 @@ def compute_cpu_reference(
 
     reference_module = sig.get_nn_module(use_custom=False)
 
-    with torch.no_grad():
-        result = reference_module(*ref_args)
+    # This function exists for correctness, not performance.  Restrict BLAS
+    # to a single thread so that OpenBLAS (or MKL) does not try to spawn as
+    # many threads as there are CPU cores.  On machines with >128 cores that
+    # exceeds OpenBLAS's compiled-in limit and segfaults.
+    # See https://github.com/iree-org/iree-turbine/issues/1336
+    prev_threads = torch.get_num_threads()
+    torch.set_num_threads(1)
+    try:
+        with torch.no_grad():
+            result = reference_module(*ref_args)
+    finally:
+        torch.set_num_threads(prev_threads)
 
     # Wrap single tensor in tuple
     if isinstance(result, torch.Tensor):
