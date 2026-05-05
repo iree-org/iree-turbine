@@ -309,14 +309,6 @@ class DeviceTensor(torch.Tensor):
         storage.ready_fence.insert(*alloca_complete_semaphore)
         return DeviceTensor(size, dtype, raw_data=storage)
 
-    def _alias(self, signal: Optional[HalFence] = None) -> "DeviceTensor":
-        """Creates a tensor alias sharing this tensor's storage owner."""
-        if signal is not None:
-            self._storage.ready_fence = signal
-        return DeviceTensor(
-            self.size(), self.dtype, raw_data=self._storage, requires_grad=False
-        )
-
     @staticmethod
     def _from_buffer(
         buffer: HalBuffer,
@@ -482,10 +474,6 @@ def _get_device_state() -> DeviceState:
     return DeviceState(driver="local-task")
 
 
-def _is_aten_op(src_op, op_name: str) -> bool:
-    return isinstance(src_op, torch._ops.OpOverload) and src_op.name() == op_name
-
-
 def _find_alias_storage(buffer: HalBuffer, input_tensors: Sequence[DeviceTensor]):
     for input_tensor in input_tensors:
         if (
@@ -518,13 +506,6 @@ def compute_method(super_fn, *args, **kwargs):
     # is often wrapped by DisableTorchFunction.
     init_py_args = args[:-1]
     src_op = args[-1]
-
-    if (
-        _is_aten_op(src_op, "aten::detach")
-        and len(init_py_args) == 1
-        and isinstance(init_py_args[0], DeviceTensor)
-    ):
-        return init_py_args[0]._alias()
 
     any_turbine_tensor = False
     devices_set = set()
