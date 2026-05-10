@@ -9,7 +9,9 @@ from contextlib import nullcontext
 import csv
 import gc
 import argparse
+import math
 import traceback
+import time
 from typing import Callable, Sequence, NamedTuple
 import os
 import shlex
@@ -31,7 +33,7 @@ from iree.turbine.kernel.boo.driver.numerics import (
     STDDEV_CHECK_ATOL_DEFAULT,
     STDDEV_CHECK_RTOL_DEFAULT,
 )
-from iree.turbine.kernel.boo.driver.utils import get_timing_parser
+from iree.turbine.kernel.boo.driver.utils import get_timing_parser, resolve_timing_args
 from iree.turbine.kernel.boo.runtime.cache import set_cache_dir, toggle_cache_on
 from iree.turbine.runtime.device import get_device_from_torch
 
@@ -49,6 +51,25 @@ class ZoneStats(NamedTuple):
 
 
 ZoneStatsSummary = dict[str, ZoneStats]
+
+
+def compute_auto_iters(warmup_time: float, min_time: float, min_iter: int) -> int:
+    """Compute the number of iterations needed to run for at least `min_time` seconds.
+
+    When min_time is active (> 0), its computed iteration count takes priority.
+    The min_iter value is only used when min_time is disabled (i.e. via --iter).
+
+    Args:
+        warmup_time: Time in seconds for a single warmup iteration.
+        min_time: Minimum benchmark duration in seconds.
+        min_iter: Number of iterations when min_time is disabled (from --min-iter).
+
+    Returns:
+        The iteration count to use.
+    """
+    if warmup_time > 0 and min_time > 0:
+        return math.ceil(min_time / warmup_time)
+    return min_iter
 
 
 def _get_main_driver_parser() -> argparse.ArgumentParser:
@@ -257,6 +278,7 @@ def main(args: list[str] = sys.argv[1:]) -> int:
         else:
             print("Running test :", test_count)
         timing_args, runner_args = timing_parser.parse_known_args(driver_args)
+        resolve_timing_args(timing_args)
         csv_row.append(shlex.join(driver_args))
         signature = BooOpRegistry.parse_command(runner_args)
 
@@ -278,7 +300,7 @@ def main(args: list[str] = sys.argv[1:]) -> int:
                     signature, meta_args.splat_input_value, devices
                 )
 
-                prof = run(
+                prof, actual_iter = run(
                     _func,
                     timing_args,
                     sample_inputs,
@@ -311,15 +333,15 @@ def main(args: list[str] = sys.argv[1:]) -> int:
             if meta_args.verbose:
                 _print_zone_stats(results)
 
-            aggregate_stats = get_aggregate_stats(csv_stats, results, timing_args.iter)
+            aggregate_stats = get_aggregate_stats(csv_stats, results, actual_iter)
 
             # Check that the number of dispatches per launch is an integer
-            dispatches_per_launch = aggregate_stats.num_dispatches / timing_args.iter
+            dispatches_per_launch = aggregate_stats.num_dispatches / actual_iter
             if not dispatches_per_launch.is_integer():
                 if meta_args.verbose:
                     print(
                         f">>> ERROR: Number of dispatches per launch is fractional: {dispatches_per_launch} "
-                        f"(total dispatches: {aggregate_stats.num_dispatches}, iterations: {timing_args.iter}). "
+                        f"(total dispatches: {aggregate_stats.num_dispatches}, iterations: {actual_iter}). "
                         f"This usually indicates the torch profiler failed to capture data for the entire run. "
                         f"Try lowering the iteration count with --iter."
                     )
@@ -503,10 +525,11 @@ def run(
     per_device_args: Sequence[tuple[torch.Tensor, ...]],
     devices: Sequence[torch.device],
     verbose: bool,
-) -> profile | None:
+) -> tuple[profile | None, int]:
     """Distributes `iter`-many applications of `func` to `per_device_args`. If
     timing is requested, returns a torch profiler object that can be inspected
-    to recover time-related information."""
+    to recover time-related information, along with the actual iteration count
+    used (which may be auto-adjusted upward from --iter)."""
 
     def pause_and_collect_mem():
         for device in devices:
@@ -524,7 +547,33 @@ def run(
     for device in devices:
         get_device_from_torch(device).hal_device.allocator.trim()
 
+    # First call: triggers JIT compilation for compiled backends.
+    torch.cuda.synchronize(devices[0])
     example_results = func(*per_device_args[0])
+    torch.cuda.synchronize(devices[0])
+
+    # Second call: measures actual kernel run time (excluding compilation).
+    torch.cuda.synchronize(devices[0])
+    warmup_start = time.time()
+    example_results = func(*per_device_args[0])
+    torch.cuda.synchronize(devices[0])
+    warmup_time = time.time() - warmup_start
+
+    # Auto-adjust iteration count: ensure benchmark runs for at least min_time seconds.
+    if timing_args.time:
+        actual_iters = compute_auto_iters(
+            warmup_time, timing_args.min_time, timing_args.min_iter
+        )
+    else:
+        actual_iters = timing_args.min_iter
+
+    if verbose and actual_iters != timing_args.min_iter:
+        print(
+            f">>>\tAuto-adjusted iterations: {actual_iters} "
+            f"(warmup: {warmup_time:.4f}s, target: {timing_args.min_time:.1f}s, "
+            f"min-iter: {timing_args.min_iter})"
+        )
+
     output_num_bytes = sum(x.element_size() * x.numel() for x in example_results)
     input_num_bytes = sum(x.element_size() * x.numel() for x in per_device_args[0])
     num_devices = len(per_device_args)
@@ -536,14 +585,14 @@ def run(
     ), "Cannot reliably profile if cleanup is needed after every step."
 
     schedule_fn, total_num_iters, needs_cleanup = make_profiler_schedule(
-        timing_args.iter, num_devices, iter_thresh
+        actual_iters, num_devices, iter_thresh
     )
 
     if timing_args.time:
         profile_context = make_profiler_context(schedule_fn)
     else:
         # When not profiling, just run as many times as requested.
-        total_num_iters = timing_args.iter
+        total_num_iters = actual_iters
         profile_context = nullcontext()
 
     results: tuple[torch.Tensor, ...] | torch.Tensor | None = None
@@ -569,7 +618,7 @@ def run(
             print(
                 f">>>\tresult #{i} shape: {list(result.shape)}; stride: {list(result.stride())}; dtype: {result.dtype}; device type: {result.device.type}"
             )
-    return prof if timing_args.time else None
+    return (prof if timing_args.time else None, actual_iters)
 
 
 DEFAULT_BACKEND = "iree_boo_experimental"
