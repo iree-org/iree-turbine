@@ -59,7 +59,7 @@ jobs:
       - name: Update IREE requirement pins
         run: build_tools/update_iree_requirement_pins.py
 
-      - uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         if: ${{ env.CREATE_PULL_REQUEST_TOKEN_APP_ID != '' && env.CREATE_PULL_REQUEST_TOKEN_APP_PRIVATE_KEY != '' }}
         id: generate-token
         with:
