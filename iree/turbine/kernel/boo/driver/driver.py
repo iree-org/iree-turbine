@@ -558,7 +558,13 @@ def run(
                 )
                 pause_and_collect_mem()
             if prof is not None:
+                for device in devices:
+                    torch.cuda.synchronize(device)
                 prof.step()
+
+    # Ensure all GPU work and profiler cleanup is complete before returning.
+    # Without this, subsequent profiling sessions may lose events.
+    pause_and_collect_mem()
 
     if results is None:
         results = ()
