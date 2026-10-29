@@ -101,6 +101,7 @@ def _get_default_decomposition_ops() -> DecompositionOpsList:
         aten.log_sigmoid_forward,
         aten.unsafe_split.Tensor,
         aten.binary_cross_entropy,
+        aten.mse_loss_backward,
         aten.dot,
         aten._adaptive_avg_pool2d,
         aten._prelu_kernel,
