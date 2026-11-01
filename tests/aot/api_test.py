@@ -6,6 +6,7 @@
 
 import logging
 import unittest
+from unittest import mock
 
 from iree.compiler.ir import (
     Context,
@@ -70,6 +71,20 @@ class CompiledModuleAPI(unittest.TestCase):
 
 
 class ExportAPI(unittest.TestCase):
+    def testCompileParseFailure(self):
+        class BasicModule(CompiledModule): ...
+
+        exported = export(BasicModule)
+        invocation = mock.Mock()
+        invocation.parse_source.return_value = False
+        with mock.patch.object(exported.session, "invocation", return_value=invocation):
+            with self.assertRaisesRegex(
+                RuntimeError, "Failed to parse imported module"
+            ):
+                exported.compile(save_to=None, target_backends=None)
+        invocation.enable_console_diagnostics.assert_called_once_with()
+        invocation.execute.assert_not_called()
+
     def testStaticNNModule(self):
         mdl = SimpleParams()
         exported = export(mdl, args=(torch.empty([128, 20]),))
