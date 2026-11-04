@@ -21,6 +21,16 @@ def _backend(gm: torch.fx.GraphModule, example_inputs):
     """Generic backend which creates and preloads a launchable."""
     # Export the graph module to mlir.
     gm = turbine_cpu_pass_pipeline(gm, example_inputs)
+    output_node = next(node for node in gm.graph.nodes if node.op == "output")
+    outputs = output_node.args[0]
+    output_mask = None
+    if isinstance(outputs, (tuple, list)) and any(value is None for value in outputs):
+        # AOTAutograd returns None for inputs that do not require gradients.
+        # Keep these in Python rather than exporting them through the device ABI.
+        output_mask = tuple(value is not None for value in outputs)
+        output_node.args = (tuple(value for value in outputs if value is not None),)
+        gm.graph.lint()
+        gm.recompile()
     logger.debug("Traced Graph Module:\n%s", str(gm))
     fx_importer = FxImporter()
     fx_importer.import_graph_module(gm)
@@ -67,7 +77,15 @@ def _backend(gm: torch.fx.GraphModule, example_inputs):
 
     launch.preload(device=device)
 
-    call_func = lambda *args: launch(*[arg.data for arg in args], device=device)
+    def call_func(*args):
+        results = launch(*[arg.data for arg in args], device=device)
+        if output_mask is None:
+            return results
+        if not isinstance(results, (tuple, list)):
+            results = (results,)
+        values = iter(results)
+        return [next(values) if present else None for present in output_mask]
+
     return make_boxed_func(call_func)
 
 
