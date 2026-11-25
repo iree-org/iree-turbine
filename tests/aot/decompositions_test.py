@@ -17,6 +17,39 @@ class DecompTest(unittest.TestCase):
         table = decompositions.current_aot_decompositions()
         self.assertTrue(table)
 
+    def testMseLossBackward(self):
+        class Backward(torch.nn.Module):
+            def forward(self, grad_output, inputs, target, reduction):
+                return torch.ops.aten.mse_loss_backward(
+                    grad_output, inputs, target, reduction
+                )
+
+        inputs = torch.linspace(-2, 2, 6).reshape(2, 3)
+        target = inputs.flip(1) + 0.5
+        # ATen uses a reduction index, the functional API uses its name.
+        for reduction, name in enumerate(("none", "mean", "sum")):
+            with self.subTest(reduction=name):
+                grad_output = (
+                    torch.linspace(-1, 1, 6).reshape(2, 3)
+                    if name == "none"
+                    else torch.tensor(0.75)
+                )
+                args = (grad_output, inputs, target, reduction)
+                exported = torch.export.export(Backward(), args)
+                exported = exported.run_decompositions(
+                    decompositions.current_aot_decompositions()
+                )
+                self.assertNotIn(
+                    torch.ops.aten.mse_loss_backward.default,
+                    [node.target for node in exported.graph.nodes],
+                )
+                differentiable = inputs.clone().requires_grad_()
+                loss = torch.nn.functional.mse_loss(
+                    differentiable, target, reduction=name
+                )
+                (expected,) = torch.autograd.grad(loss, differentiable, grad_output)
+                torch.testing.assert_close(exported.module()(*args), expected)
+
     def testExtendToEmpty(self):
         with decompositions.extend_aot_decompositions(from_current=False) as t:
             self.assertFalse(t, msg=f"{t}")
