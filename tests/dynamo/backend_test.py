@@ -130,3 +130,28 @@ def test_generic_backend_backward(device: torch.device):
             message += f"Failed numerics for {label}: {err=}\n"
 
     assert message == "", message
+
+
+@pytest.mark.parametrize(
+    "requires_grad", [(True, False, False), (False, True, False), (True, False, True)]
+)
+def test_generic_backend_none_gradient_outputs(requires_grad):
+    @torch.compile(backend="iree_turbine", fullgraph=True)
+    def objective(left, right, bias):
+        return (left * right + bias).sum()
+
+    left = torch.tensor([1.0, -2.0, 0.5], requires_grad=requires_grad[0])
+    right = torch.tensor([2.0, 3.0, -1.0], requires_grad=requires_grad[1])
+    bias = torch.tensor([0.25, 0.5, -0.75], requires_grad=requires_grad[2])
+    loss = objective(left, right, bias)
+    loss.backward()
+
+    expected_loss = (left.detach() * right.detach() + bias.detach()).sum()
+    torch.testing.assert_close(loss, expected_loss)
+    for tensor, expected in zip(
+        (left, right, bias), (right.detach(), left.detach(), torch.ones_like(bias))
+    ):
+        if tensor.requires_grad:
+            torch.testing.assert_close(tensor.grad, expected)
+        else:
+            assert tensor.grad is None
