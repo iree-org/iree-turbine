@@ -136,6 +136,7 @@ class ExportOutput:
             assert isinstance(output, Output)
 
         inv = self.session.invocation()
+        inv.enable_console_diagnostics()
         if self._importer_uses_session:
             inv.import_module(self.mlir_module)
         else:
@@ -145,8 +146,10 @@ class ExportOutput:
             self.mlir_module.write_bytecode(buffer_io)
             buffer = buffer_io.getvalue()
             source = Source.wrap_buffer(self.session, buffer)
-            inv.parse_source(source)
-        inv.enable_console_diagnostics()
+            if not inv.parse_source(source):
+                raise RuntimeError(
+                    "Failed to parse imported module; see compiler diagnostics"
+                )
 
         # TODO: Don't use flags to set the target backends: set module attributes.
         if target_backends is not None:
